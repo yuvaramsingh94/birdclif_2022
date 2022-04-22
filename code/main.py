@@ -12,6 +12,7 @@ from config.config import config
 from utils import *
 from model import *
 import shutil
+from tensorflow.keras import backend as K
 
 seed_everything(config.SEED)
 

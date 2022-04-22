@@ -17,11 +17,11 @@ def get_model(strategy):
         model = Sequential()
         model.add(mel_spec)
         model.add(tf.keras.layers.Permute((2,1,3)))
-        model.build(input_shape = input_shape)
+        model.build(input_shape = [None, config.WAVE_LENGTH, 1])
         img_concat = tf.keras.layers.concatenate([model.output]*3, axis=-1)
         img_norm = tf.keras.layers.BatchNormalization()(img_concat)
 
-        base = tfimm.create_model(config.MODEL,pretrained=True, nb_classes=0)
+        base = tfimm.create_model(config.model_type,pretrained=True, nb_classes=0)
         _, features = base(img_norm, return_features=True)
         gap = tf.keras.layers.GlobalAveragePooling2D(name="GAP")(features['features'])
         gmp = tf.keras.layers.GlobalMaxPooling2D(name="GMP")(features['features'])
@@ -37,7 +37,7 @@ def get_model(strategy):
             optimizer=opt,
             # loss=[tf.keras.losses.SparseCategoricalCrossentropy()],
             loss={
-                "arcface_softmax": tf.keras.losses.BinaryCrossentropy(from_logits=True,label_smoothing=0.1),
+                "logits": tf.keras.losses.BinaryCrossentropy(from_logits=True,label_smoothing=0.1),
             },
             #metrics=[
             #    # tf.keras.metrics.SparseCategoricalAccuracy(),

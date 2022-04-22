@@ -122,7 +122,7 @@ def get_training_dataset(filenames):
     )
     dataset = dataset.repeat() # the training dataset must repeat for several epochs
     dataset = dataset.shuffle(2048)
-    dataset = dataset.batch(BATCH_SIZE, num_parallel_calls=AUTO)
+    dataset = dataset.batch(config.BATCH_SIZE, num_parallel_calls=AUTO)
     dataset = dataset.prefetch(AUTO) # prefetch next batch while training (autotune prefetch buffer size)
     return dataset
 
@@ -133,7 +133,7 @@ def get_valid_dataset(filenames):
     )
     dataset = dataset.repeat() # the training dataset must repeat for several epochs
     dataset = dataset.shuffle(2048)
-    dataset = dataset.batch(BATCH_SIZE, num_parallel_calls=AUTO)
+    dataset = dataset.batch(config.BATCH_SIZE, num_parallel_calls=AUTO)
     dataset = dataset.prefetch(AUTO) # prefetch next batch while training (autotune prefetch buffer size)
     return dataset
 

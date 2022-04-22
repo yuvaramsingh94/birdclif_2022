@@ -1,7 +1,9 @@
 class config:
     EPOCHS = 20  # 20
-    BATCH_SIZE = 2
-    MODEL = 'resnet18'
+    BATCH_SIZE = 8
+    WAVE_LENGTH = 441000
+    SEED = 1
+    model_type = 'resnet18'
     WORKERS = 6
     sample_rate = 44100
     n_fft = 1024
@@ -13,4 +15,7 @@ class config:
     LR_MIN = 0.0000001  # 0.000001
     LR_RAMP = 4
     SAVE_DIR = '.'
-    WEIGHT_SAVE
+    WEIGHT_SAVE = ''
+
+    RESUME = False
+    RESUME_EPOCH = 0
