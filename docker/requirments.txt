@@ -4,3 +4,5 @@ colorednoise
 timm
 tfimm
 kapre
+pandas
+matplotlib
