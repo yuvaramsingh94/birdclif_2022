@@ -1,3 +1,3 @@
-FROM nvcr.io/nvidia/pytorch:22.03-py3
+FROM nvcr.io/nvidia/tensorflow:21.10-tf2-py3
 COPY requirments.txt /opt/app/requirments.txt
 RUN pip install -r /opt/app/requirments.txt
