@@ -89,23 +89,24 @@ def seed_everything(seed):
     tf.random.set_seed(seed)
 
 
-def decode_audio(audio):
-    audio = tf.audio.decode_wav(
-        audio,
-    )
-    return audio.audio
+def decode_image(image_data):
+    image = tf.image.decode_jpeg(image_data, channels=3)
+    image = tf.image.resize(image, [config.IMAGE_SIZE, config.IMAGE_SIZE])
+    image = tf.cast(image, tf.float32) / 255.0
+    # normalization
+    image = image - config.mean  # [0.485, 0.456, 0.406]
+    image = image / config.std  # [0.229, 0.224, 0.225]
+    return image
 
 
 def read_labeled_tfrecord(example):
     LABELED_TFREC_FORMAT = {
-        "image": tf.io.FixedLenFeature([], tf.string),  # tf.string means bytestring
-        "image_name": tf.io.FixedLenFeature(
-            [], tf.string
-        ),  # shape [] means single element
-        "target": tf.io.FixedLenFeature([], tf.int64),
+        "image": tf.io.FixedLenFeature([], tf.string), # tf.string means bytestring
+        "image_name": tf.io.FixedLenFeature([], tf.string),  # shape [] means single element
+        'target': tf.io.FixedLenFeature([], tf.int64),
     }
     example = tf.io.parse_single_example(example, LABELED_TFREC_FORMAT)
-    image = decode_audio(example["image"])
+    image = decode_image(example["image"])
     label = example["target"]
     # image name
     image_name = example["image_name"]
@@ -150,9 +151,22 @@ def get_valid_dataset(filenames):
     dataset = dataset.map(
         lambda image, label, image_name: (image, label), num_parallel_calls=AUTO
     )
-    dataset = dataset.repeat()  # the training dataset must repeat for several epochs
+    #dataset = dataset.repeat()  # the training dataset must repeat for several epochs
     dataset = dataset.shuffle(2048)
-    dataset = dataset.batch(config.BATCH_SIZE, num_parallel_calls=AUTO)
+    dataset = dataset.batch(config.BATCH_SIZE, num_parallel_calls=AUTO, drop_remainder=True)
+    dataset = dataset.prefetch(
+        AUTO
+    )  # prefetch next batch while training (autotune prefetch buffer size)
+    return dataset
+
+def get_eval_dataset(filenames):
+    dataset = load_dataset(filenames)
+    dataset = dataset.map(
+        lambda image, label, image_name: (image, label,image_name), num_parallel_calls=AUTO
+    )
+    #dataset = dataset.repeat()  # the training dataset must repeat for several epochs
+    dataset = dataset.shuffle(2048)
+    dataset = dataset.batch(config.BATCH_SIZE, num_parallel_calls=AUTO, drop_remainder=True)
     dataset = dataset.prefetch(
         AUTO
     )  # prefetch next batch while training (autotune prefetch buffer size)

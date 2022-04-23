@@ -13,6 +13,7 @@ from utils import *
 from model import *
 import shutil
 from tensorflow.keras import backend as K
+import matplotlib.pyplot as plt
 
 seed_everything(config.SEED)
 
@@ -20,11 +21,17 @@ IS_COLAB = not os.path.exists("/kaggle/input")
 print(IS_COLAB)
 
 if IS_COLAB:
-    if not os.path.exists(config.SAVE_DIR + config.WEIGHT_SAVE):
-        os.mkdir(config.SAVE_DIR + config.WEIGHT_SAVE)
+    if not os.path.exists(config.SAVE_DIR + config.WEIGHT_SAVE + f'/fold_{str(config.FOLD)}/'):
+        os.makedirs(config.SAVE_DIR + config.WEIGHT_SAVE + f'/fold_{str(config.FOLD)}/')
 
-    if not os.path.exists(config.SAVE_DIR + config.WEIGHT_SAVE + "/weights/"):
-        os.mkdir(config.SAVE_DIR + config.WEIGHT_SAVE + "/weights/")
+    if not os.path.exists(config.SAVE_DIR + config.WEIGHT_SAVE + f'/fold_{str(config.FOLD)}/' + "/weights/"):
+        os.makedirs(config.SAVE_DIR + config.WEIGHT_SAVE + f'/fold_{str(config.FOLD)}/' + "/weights/")
+
+
+print("copy the code and supporting materials for reference")
+if os.path.exists(config.SAVE_DIR + config.WEIGHT_SAVE + f'/fold_{str(config.FOLD)}/' + "/code"):
+    shutil.rmtree(config.SAVE_DIR + config.WEIGHT_SAVE + f'/fold_{str(config.FOLD)}/' + "/code")
+shutil.copytree("/content/code", config.SAVE_DIR + config.WEIGHT_SAVE + f'/fold_{str(config.FOLD)}/' + "/code")
 
 """
 print("copy the code and supporting materials for reference")
@@ -83,66 +90,29 @@ test_files = np.sort(
 )
 
 """
-train_files = [
-    "data/tfrec/v1/happywhale-ff-2022-train-0-962.tfrec",  # happywhale-ff-2022-train-0-962
-    "data/tfrec/v1/happywhale-ff-2022-train-1-962.tfrec",
-    "data/tfrec/v1/happywhale-ff-2022-train-2-961.tfrec",
-    "data/tfrec/v1/happywhale-ff-2022-train-3-961.tfrec",
-    "data/tfrec/v1/happywhale-ff-2022-train-4-961.tfrec",
-    "data/tfrec/v1/happywhale-ff-2022-train-5-961.tfrec",
-    "data/tfrec/v1/happywhale-ff-2022-train-6-961.tfrec",
-    "data/tfrec/v1/happywhale-ff-2022-train-7-961.tfrec",
-    "data/tfrec/v1/happywhale-war-2022-train-0-1000.tfrec",
-    "data/tfrec/v1/happywhale-war-2022-train-1-1000.tfrec",
-    "data/tfrec/v1/happywhale-war-2022-train-2-1000.tfrec",
-    "data/tfrec/v1/happywhale-war-2022-train-3-1000.tfrec",
-    "data/tfrec/v1/happywhale-war-2022-train-4-1000.tfrec",
-    "data/tfrec/v1/happywhale-war-2022-train-5-1000.tfrec",
-    "data/tfrec/v1/happywhale-war-2022-train-6-1000.tfrec",
-    "data/tfrec/v1/happywhale-war-2022-train-7-1000.tfrec",
-]
+if not config.IS_COLAB:
+    train_files = [config.DATA_PATH+i for i in os.listdir(config.DATA_PATH) if "tfrec" in i]
+else:
+    train_ff_files = np.sort(
+        np.array(tf.io.gfile.glob(config.DATA_LINK + "/happywhale-ff*.tfrec"))
+    )
+    train_war_files = np.sort(
+        np.array(tf.io.gfile.glob(config.DATA_LINK + "/happywhale-war*.tfrec"))
+    )
 
-train_files = np.sort(
-    np.array(tf.io.gfile.glob(config.DATA_LINK + "/happywhale-*.tfrec"))
-)
-# """
 
-# ds = get_training_dataset(train_files)
+#print(train_ff_files)
+#print(train_ff_files)
+#train_ff_files = [x for i, x in enumerate(train_ff_files) if i != config.FOLD]
+#train_war_files = [x for i, x in enumerate(train_war_files) if i != config.FOLD]
 
-"""
-for (sample, label) in ds:
-    print("this is sampe keys ", sample.keys())
-    img = sample["inp1"]  # dict_keys(['inp_crop', 'inp_ori', 'inp2'])
-    print(sample["inp2"])
-    plt.figure(figsize=(25, int(25 * row / col)))
-    for j in range(row * col):
-        plt.subplot(row, col, j + 1)
-        plt.title(label[j].numpy())
-        plt.axis("off")
-        plt.imshow(
-            img[
-                j,
-            ]
-        )
-    plt.show()
-    break
-print(img.shape)
-print('min max',tf.reduce_min(img),tf.reduce_max(img))
-"""
-"""
+TRAINING_FILENAMES = [x for i, x in enumerate(train_ff_files) if i != config.FOLD] + [x for i, x in enumerate(train_war_files) if i != config.FOLD]
 
-for fold in range(config.FOLDS):
-    if not os.path.exists(config.save_dir + f"fold_{fold}"):
-        os.mkdir(config.save_dir + f"fold_{fold}")
-"""
-##
+#valid_ff_files = [x for i, x in enumerate(train_ff_files) if i == config.FOLD]
+#valid_war_files = [x for i, x in enumerate(train_war_files) if i == config.FOLD]
+#VALIDATION_FILENAMES = valid_ff_files + valid_war_files
 
-# fold = config.FOLDS
-
-TRAINING_FILENAMES = [x for i, x in enumerate(train_files)]  # if i != fold]
-# VALIDATION_FILENAMES = [
-#    x for i, x in enumerate(train_files) if i == fold
-# ]  # [x for i, x in enumerate(train_files) if i == fold]
+VALIDATION_FILENAMES = [x for i, x in enumerate(train_ff_files) if i == config.FOLD] + [x for i, x in enumerate(train_war_files) if i == config.FOLD]
 """
 #print("Fold ", fold)
 print(
@@ -153,21 +123,21 @@ print(
 )
 """
 print("Training file", TRAINING_FILENAMES)
-# print("validation file", VALIDATION_FILENAMES)
+print("validation file", VALIDATION_FILENAMES)
 
 seed_everything(config.SEED)
 VERBOSE = 1
 train_dataset = get_training_dataset(TRAINING_FILENAMES)
-# val_dataset = get_val_dataset(VALIDATION_FILENAMES)
+val_dataset = get_valid_dataset(VALIDATION_FILENAMES)
 STEPS_PER_EPOCH = count_data_items(TRAINING_FILENAMES) // config.BATCH_SIZE
 # VAL_STEPS_PER_EPOCH = count_data_items(VALIDATION_FILENAMES) // config.BATCH_SIZE
 train_logger = tf.keras.callbacks.CSVLogger(
-    config.SAVE_DIR + config.WEIGHT_SAVE + "/weights/" + f"/training-log.h5.csv"
+    config.SAVE_DIR + config.WEIGHT_SAVE + f'/fold_{str(config.FOLD)}/'+ "weights/" + f"training-log.h5.csv"
 )
 # SAVE BEST MODEL EACH FOLD
 sv_loss = tf.keras.callbacks.ModelCheckpoint(
-    # config.SAVE_DIR + config.WEIGHT_SAVE + "/weights/" + "/best.hdf5",  # {epoch:02d}
-    "weights/v1/best.h5",
+    config.SAVE_DIR + config.WEIGHT_SAVE + f'/fold_{str(config.FOLD)}/'+ "weights/" + "best.hdf5",  # {epoch:02d}
+    #"weights/v1/best.h5",
     monitor="val_loss",
     verbose=0,
     save_best_only=True,
@@ -187,7 +157,7 @@ model = get_model(strategy)
 
 history = model.fit(
     train_dataset,
-    # validation_data=val_dataset,
+    validation_data=val_dataset,
     steps_per_epoch=STEPS_PER_EPOCH,
     # validation_steps=VAL_STEPS_PER_EPOCH,
     epochs=config.EPOCHS,
@@ -198,3 +168,14 @@ history = model.fit(
     ],  # maybe remove  train_logger, sv_loss # Snapshot([1, 20, 30, 40])
     verbose=VERBOSE,
 )
+
+print(history.history.keys())
+
+# summarize history for loss
+plt.plot(history.history['loss'])
+plt.plot(history.history['val_loss'])
+plt.title('model loss')
+plt.ylabel('loss')
+plt.xlabel('epoch')
+plt.legend(['train', 'test'], loc='upper left')
+plt.show()
