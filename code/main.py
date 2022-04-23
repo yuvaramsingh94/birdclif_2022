@@ -21,17 +21,36 @@ IS_COLAB = not os.path.exists("/kaggle/input")
 print(IS_COLAB)
 
 if IS_COLAB:
-    if not os.path.exists(config.SAVE_DIR + config.WEIGHT_SAVE + f'/fold_{str(config.FOLD)}/'):
-        os.makedirs(config.SAVE_DIR + config.WEIGHT_SAVE + f'/fold_{str(config.FOLD)}/')
+    if not os.path.exists(
+        config.SAVE_DIR + config.WEIGHT_SAVE + f"/fold_{str(config.FOLD)}/"
+    ):
+        os.makedirs(config.SAVE_DIR + config.WEIGHT_SAVE + f"/fold_{str(config.FOLD)}/")
 
-    if not os.path.exists(config.SAVE_DIR + config.WEIGHT_SAVE + f'/fold_{str(config.FOLD)}/' + "/weights/"):
-        os.makedirs(config.SAVE_DIR + config.WEIGHT_SAVE + f'/fold_{str(config.FOLD)}/' + "/weights/")
+    if not os.path.exists(
+        config.SAVE_DIR
+        + config.WEIGHT_SAVE
+        + f"/fold_{str(config.FOLD)}/"
+        + "/weights/"
+    ):
+        os.makedirs(
+            config.SAVE_DIR
+            + config.WEIGHT_SAVE
+            + f"/fold_{str(config.FOLD)}/"
+            + "/weights/"
+        )
 
 
 print("copy the code and supporting materials for reference")
-if os.path.exists(config.SAVE_DIR + config.WEIGHT_SAVE + f'/fold_{str(config.FOLD)}/' + "/code"):
-    shutil.rmtree(config.SAVE_DIR + config.WEIGHT_SAVE + f'/fold_{str(config.FOLD)}/' + "/code")
-shutil.copytree("/content/code", config.SAVE_DIR + config.WEIGHT_SAVE + f'/fold_{str(config.FOLD)}/' + "/code")
+if os.path.exists(
+    config.SAVE_DIR + config.WEIGHT_SAVE + f"/fold_{str(config.FOLD)}/" + "/code"
+):
+    shutil.rmtree(
+        config.SAVE_DIR + config.WEIGHT_SAVE + f"/fold_{str(config.FOLD)}/" + "/code"
+    )
+shutil.copytree(
+    "/content/code",
+    config.SAVE_DIR + config.WEIGHT_SAVE + f"/fold_{str(config.FOLD)}/" + "/code",
+)
 
 """
 print("copy the code and supporting materials for reference")
@@ -91,7 +110,9 @@ test_files = np.sort(
 
 """
 if not config.IS_COLAB:
-    train_files = [config.DATA_PATH+i for i in os.listdir(config.DATA_PATH) if "tfrec" in i]
+    train_files = [
+        config.DATA_PATH + i for i in os.listdir(config.DATA_PATH) if "tfrec" in i
+    ]
 else:
     train_ff_files = np.sort(
         np.array(tf.io.gfile.glob(config.DATA_LINK + "/happywhale-ff*.tfrec"))
@@ -101,18 +122,22 @@ else:
     )
 
 
-#print(train_ff_files)
-#print(train_ff_files)
-#train_ff_files = [x for i, x in enumerate(train_ff_files) if i != config.FOLD]
-#train_war_files = [x for i, x in enumerate(train_war_files) if i != config.FOLD]
+# print(train_ff_files)
+# print(train_ff_files)
+# train_ff_files = [x for i, x in enumerate(train_ff_files) if i != config.FOLD]
+# train_war_files = [x for i, x in enumerate(train_war_files) if i != config.FOLD]
 
-TRAINING_FILENAMES = [x for i, x in enumerate(train_ff_files) if i != config.FOLD] + [x for i, x in enumerate(train_war_files) if i != config.FOLD]
+TRAINING_FILENAMES = [x for i, x in enumerate(train_ff_files) if i != config.FOLD] + [
+    x for i, x in enumerate(train_war_files) if i != config.FOLD
+]
 
-#valid_ff_files = [x for i, x in enumerate(train_ff_files) if i == config.FOLD]
-#valid_war_files = [x for i, x in enumerate(train_war_files) if i == config.FOLD]
-#VALIDATION_FILENAMES = valid_ff_files + valid_war_files
+# valid_ff_files = [x for i, x in enumerate(train_ff_files) if i == config.FOLD]
+# valid_war_files = [x for i, x in enumerate(train_war_files) if i == config.FOLD]
+# VALIDATION_FILENAMES = valid_ff_files + valid_war_files
 
-VALIDATION_FILENAMES = [x for i, x in enumerate(train_ff_files) if i == config.FOLD] + [x for i, x in enumerate(train_war_files) if i == config.FOLD]
+VALIDATION_FILENAMES = [x for i, x in enumerate(train_ff_files) if i == config.FOLD] + [
+    x for i, x in enumerate(train_war_files) if i == config.FOLD
+]
 """
 #print("Fold ", fold)
 print(
@@ -132,12 +157,20 @@ val_dataset = get_valid_dataset(VALIDATION_FILENAMES)
 STEPS_PER_EPOCH = count_data_items(TRAINING_FILENAMES) // config.BATCH_SIZE
 # VAL_STEPS_PER_EPOCH = count_data_items(VALIDATION_FILENAMES) // config.BATCH_SIZE
 train_logger = tf.keras.callbacks.CSVLogger(
-    config.SAVE_DIR + config.WEIGHT_SAVE + f'/fold_{str(config.FOLD)}/'+ "weights/" + f"training-log.h5.csv"
+    config.SAVE_DIR
+    + config.WEIGHT_SAVE
+    + f"/fold_{str(config.FOLD)}/"
+    + "weights/"
+    + f"training-log.h5.csv"
 )
 # SAVE BEST MODEL EACH FOLD
 sv_loss = tf.keras.callbacks.ModelCheckpoint(
-    config.SAVE_DIR + config.WEIGHT_SAVE + f'/fold_{str(config.FOLD)}/'+ "weights/" + "best.hdf5",  # {epoch:02d}
-    #"weights/v1/best.h5",
+    config.SAVE_DIR
+    + config.WEIGHT_SAVE
+    + f"/fold_{str(config.FOLD)}/"
+    + "weights/"
+    + "best.hdf5",  # {epoch:02d}
+    # "weights/v1/best.h5",
     monitor="val_loss",
     verbose=0,
     save_best_only=True,
@@ -172,10 +205,10 @@ history = model.fit(
 print(history.history.keys())
 
 # summarize history for loss
-plt.plot(history.history['loss'])
-plt.plot(history.history['val_loss'])
-plt.title('model loss')
-plt.ylabel('loss')
-plt.xlabel('epoch')
-plt.legend(['train', 'test'], loc='upper left')
+plt.plot(history.history["loss"])
+plt.plot(history.history["val_loss"])
+plt.title("model loss")
+plt.ylabel("loss")
+plt.xlabel("epoch")
+plt.legend(["train", "test"], loc="upper left")
 plt.show()

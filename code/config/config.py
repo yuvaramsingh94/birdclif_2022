@@ -5,7 +5,7 @@ class config:
     IMAGE_SIZE = 512
     FOLD = 0
     WEIGHT_SAVE = "binary_v1"
-    IS_COLAB  = True
+    IS_COLAB = True
     DATA_LINK = "gs://kds-4bc3cc4255dba2e93d46f795373fe1d433a69f9af31ef2edb3940e94"
     DATA_PATH = "data/tfrec/v2/"
     SEED = 1
@@ -21,7 +21,6 @@ class config:
     LR_MIN = 0.0000001  # 0.000001
     LR_RAMP = 4
     SAVE_DIR = "/content/drive/MyDrive/Kaggle/birdclif-2022/"
-    
 
     RESUME = False
     RESUME_EPOCH = 0
