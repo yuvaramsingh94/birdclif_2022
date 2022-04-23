@@ -7,3 +7,4 @@ kapre
 pandas
 matplotlib
 librosa
+opencv-python
