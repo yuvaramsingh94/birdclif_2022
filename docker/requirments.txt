@@ -6,3 +6,4 @@ tfimm
 kapre
 pandas
 matplotlib
+librosa

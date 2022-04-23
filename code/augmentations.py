@@ -2,8 +2,8 @@ import numpy as np
 import torch
 import colorednoise as cn
 
-#https://www.kaggle.com/hidehisaarai1213/rfcx-audio-data-augmentation-japanese-english
-#effects in torchaudio https://pytorch.org/audio/stable/sox_effects.html#listing-supported-effects
+# https://www.kaggle.com/hidehisaarai1213/rfcx-audio-data-augmentation-japanese-english
+# effects in torchaudio https://pytorch.org/audio/stable/sox_effects.html#listing-supported-effects
 class AudioTransform:
     def __init__(self, always_apply=False, p=0.5):
         self.always_apply = always_apply
@@ -65,13 +65,14 @@ class GaussianNoiseSNR(AudioTransform):
 
     def apply(self, y: np.ndarray, **params):
         snr = np.random.uniform(self.min_snr, self.max_snr)
-        a_signal = np.sqrt(y ** 2).max()
+        a_signal = np.sqrt(y**2).max()
         a_noise = a_signal / (10 ** (snr / 20))
 
         white_noise = np.random.randn(len(y))
-        a_white = np.sqrt(white_noise ** 2).max()
+        a_white = np.sqrt(white_noise**2).max()
         augmented = (y + white_noise * 1 / a_white * a_noise).astype(y.dtype)
         return augmented
+
 
 class PinkNoiseSNR(AudioTransform):
     def __init__(self, always_apply=False, p=0.5, min_snr=5.0, max_snr=20.0, **kwargs):
@@ -82,13 +83,14 @@ class PinkNoiseSNR(AudioTransform):
 
     def apply(self, y: np.ndarray, **params):
         snr = np.random.uniform(self.min_snr, self.max_snr)
-        a_signal = np.sqrt(y ** 2).max()
+        a_signal = np.sqrt(y**2).max()
         a_noise = a_signal / (10 ** (snr / 20))
 
         pink_noise = cn.powerlaw_psd_gaussian(1, len(y))
-        a_pink = np.sqrt(pink_noise ** 2).max()
+        a_pink = np.sqrt(pink_noise**2).max()
         augmented = (y + pink_noise * 1 / a_pink * a_noise).astype(y.dtype)
         return augmented
+
 
 class PitchShift(AudioTransform):
     def __init__(self, always_apply=False, p=0.5, max_steps=5, sr=32000):
@@ -102,6 +104,7 @@ class PitchShift(AudioTransform):
         augmented = librosa.effects.pitch_shift(y, sr=self.sr, n_steps=n_steps)
         return augmented
 
+
 class TimeStretch(AudioTransform):
     def __init__(self, always_apply=False, p=0.5, max_rate=1.2):
         super().__init__(always_apply, p)
@@ -113,17 +116,30 @@ class TimeStretch(AudioTransform):
         augmented = librosa.effects.time_stretch(y, rate)
         return augmented
 
+
 class TimeShift(AudioTransform):
-    def __init__(self, always_apply=False, p=0.5, max_shift_second=2, sr=32000, padding_mode="replace"):
+    def __init__(
+        self,
+        always_apply=False,
+        p=0.5,
+        max_shift_second=2,
+        sr=32000,
+        padding_mode="replace",
+    ):
         super().__init__(always_apply, p)
-    
-        assert padding_mode in ["replace", "zero"], "`padding_mode` must be either 'replace' or 'zero'"
+
+        assert padding_mode in [
+            "replace",
+            "zero",
+        ], "`padding_mode` must be either 'replace' or 'zero'"
         self.max_shift_second = max_shift_second
         self.sr = sr
         self.padding_mode = padding_mode
 
     def apply(self, y: np.ndarray, **params):
-        shift = np.random.randint(-self.sr * self.max_shift_second, self.sr * self.max_shift_second)
+        shift = np.random.randint(
+            -self.sr * self.max_shift_second, self.sr * self.max_shift_second
+        )
         augmented = np.roll(y, shift)
         if self.padding_mode == "zero":
             if shift > 0:
@@ -132,14 +148,20 @@ class TimeShift(AudioTransform):
                 augmented[shift:] = 0
         return augmented
 
+
 class VolumeControl(AudioTransform):
     def __init__(self, always_apply=False, p=0.5, db_limit=10, mode="uniform"):
         super().__init__(always_apply, p)
 
-        assert mode in ["uniform", "fade", "fade", "cosine", "sine"], \
-            "`mode` must be one of 'uniform', 'fade', 'cosine', 'sine'"
+        assert mode in [
+            "uniform",
+            "fade",
+            "fade",
+            "cosine",
+            "sine",
+        ], "`mode` must be one of 'uniform', 'fade', 'cosine', 'sine'"
 
-        self.db_limit= db_limit
+        self.db_limit = db_limit
         self.mode = mode
 
     def apply(self, y: np.ndarray, **params):

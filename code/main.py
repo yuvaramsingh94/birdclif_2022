@@ -26,12 +26,12 @@ if IS_COLAB:
     if not os.path.exists(config.SAVE_DIR + config.WEIGHT_SAVE + "/weights/"):
         os.mkdir(config.SAVE_DIR + config.WEIGHT_SAVE + "/weights/")
 
-'''
+"""
 print("copy the code and supporting materials for reference")
 if os.path.exists(config.SAVE_DIR + config.WEIGHT_SAVE + "/code"):
     shutil.rmtree(config.SAVE_DIR + config.WEIGHT_SAVE + "/code")
 shutil.copytree("/content/code", config.SAVE_DIR + config.WEIGHT_SAVE + "/code")
-'''
+"""
 
 import tensorflow as tf
 
@@ -84,7 +84,7 @@ test_files = np.sort(
 
 """
 train_files = [
-    "data/tfrec/v1/happywhale-ff-2022-train-0-962.tfrec",#happywhale-ff-2022-train-0-962
+    "data/tfrec/v1/happywhale-ff-2022-train-0-962.tfrec",  # happywhale-ff-2022-train-0-962
     "data/tfrec/v1/happywhale-ff-2022-train-1-962.tfrec",
     "data/tfrec/v1/happywhale-ff-2022-train-2-961.tfrec",
     "data/tfrec/v1/happywhale-ff-2022-train-3-961.tfrec",
@@ -101,11 +101,15 @@ train_files = [
     "data/tfrec/v1/happywhale-war-2022-train-6-1000.tfrec",
     "data/tfrec/v1/happywhale-war-2022-train-7-1000.tfrec",
 ]
-#"""
 
-#ds = get_training_dataset(train_files)
+train_files = np.sort(
+    np.array(tf.io.gfile.glob(config.DATA_LINK + "/happywhale-*.tfrec"))
+)
+# """
 
-'''
+# ds = get_training_dataset(train_files)
+
+"""
 for (sample, label) in ds:
     print("this is sampe keys ", sample.keys())
     img = sample["inp1"]  # dict_keys(['inp_crop', 'inp_ori', 'inp2'])
@@ -124,7 +128,7 @@ for (sample, label) in ds:
     break
 print(img.shape)
 print('min max',tf.reduce_min(img),tf.reduce_max(img))
-'''
+"""
 """
 
 for fold in range(config.FOLDS):
@@ -133,12 +137,12 @@ for fold in range(config.FOLDS):
 """
 ##
 
-#fold = config.FOLDS
+# fold = config.FOLDS
 
-TRAINING_FILENAMES = [x for i, x in enumerate(train_files) ]#if i != fold]
-#VALIDATION_FILENAMES = [
+TRAINING_FILENAMES = [x for i, x in enumerate(train_files)]  # if i != fold]
+# VALIDATION_FILENAMES = [
 #    x for i, x in enumerate(train_files) if i == fold
-#]  # [x for i, x in enumerate(train_files) if i == fold]
+# ]  # [x for i, x in enumerate(train_files) if i == fold]
 """
 #print("Fold ", fold)
 print(
@@ -149,21 +153,21 @@ print(
 )
 """
 print("Training file", TRAINING_FILENAMES)
-#print("validation file", VALIDATION_FILENAMES)
+# print("validation file", VALIDATION_FILENAMES)
 
 seed_everything(config.SEED)
 VERBOSE = 1
 train_dataset = get_training_dataset(TRAINING_FILENAMES)
-#val_dataset = get_val_dataset(VALIDATION_FILENAMES)
+# val_dataset = get_val_dataset(VALIDATION_FILENAMES)
 STEPS_PER_EPOCH = count_data_items(TRAINING_FILENAMES) // config.BATCH_SIZE
-#VAL_STEPS_PER_EPOCH = count_data_items(VALIDATION_FILENAMES) // config.BATCH_SIZE
+# VAL_STEPS_PER_EPOCH = count_data_items(VALIDATION_FILENAMES) // config.BATCH_SIZE
 train_logger = tf.keras.callbacks.CSVLogger(
     config.SAVE_DIR + config.WEIGHT_SAVE + "/weights/" + f"/training-log.h5.csv"
 )
 # SAVE BEST MODEL EACH FOLD
 sv_loss = tf.keras.callbacks.ModelCheckpoint(
-    #config.SAVE_DIR + config.WEIGHT_SAVE + "/weights/" + "/best.hdf5",  # {epoch:02d}
-    'weights/v1/best.h5',
+    # config.SAVE_DIR + config.WEIGHT_SAVE + "/weights/" + "/best.hdf5",  # {epoch:02d}
+    "weights/v1/best.h5",
     monitor="val_loss",
     verbose=0,
     save_best_only=True,
@@ -176,18 +180,21 @@ K.clear_session()
 model = get_model(strategy)
 # model.summary()
 
-#print(
+# print(
 #    "#### Image Size %i with EfficientNet B%i and batch_size %i"
 #    % (config.IMAGE_SIZE, config.EFF_NET, config.BATCH_SIZE)
-#)
+# )
 
 history = model.fit(
     train_dataset,
-    #validation_data=val_dataset,
+    # validation_data=val_dataset,
     steps_per_epoch=STEPS_PER_EPOCH,
-    #validation_steps=VAL_STEPS_PER_EPOCH,
+    # validation_steps=VAL_STEPS_PER_EPOCH,
     epochs=config.EPOCHS,
-    #callbacks=[get_lr_callback(), train_logger, sv_loss, Snapshot([1, 20, 30, 40])],#maybe remove  train_logger, sv_loss
-    callbacks=[get_lr_callback(), sv_loss],#maybe remove  train_logger, sv_loss # Snapshot([1, 20, 30, 40])
+    # callbacks=[get_lr_callback(), train_logger, sv_loss, Snapshot([1, 20, 30, 40])],#maybe remove  train_logger, sv_loss
+    callbacks=[
+        get_lr_callback(),
+        sv_loss,
+    ],  # maybe remove  train_logger, sv_loss # Snapshot([1, 20, 30, 40])
     verbose=VERBOSE,
 )
