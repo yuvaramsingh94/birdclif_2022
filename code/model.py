@@ -20,15 +20,29 @@ def get_model(strategy):
 
         base = tfimm.create_model(config.model_type, pretrained=True, nb_classes=0)
 
-        input = tf.keras.Input((config.IMAGE_SIZE, config.IMAGE_SIZE, 3), name="inp1")
+        input = tf.keras.Input((config.IMG_FREQ, config.IMG_TIME, 3), name="inp1")
         _, features = base(input, return_features=True)
-        gap = tf.keras.layers.GlobalAveragePooling2D(name="GAP")(features["features"])
-        gmp = tf.keras.layers.GlobalMaxPooling2D(name="GMP")(features["features"])
-        pool_concat = tf.keras.layers.concatenate([gap, gmp], axis=-1)
-        drop = tf.keras.layers.Dropout(0.2)(pool_concat)
-        logits = tf.keras.layers.Dense(1, name="logits")(drop)
-
-        model = tf.keras.models.Model(inputs=input, outputs=logits)
+        ## SED model flow
+        # (batch_size, freq, frames, channels, )
+        
+        # (batch_size, frames, channels, )
+        freq_reduced = tf.keras.layers.Lambda(lambda x: tf.math.reduce_mean(x,axis=1), output_shape=None)(features["features"])
+        ## without pooling
+        #ap = tf.keras.layers.AveragePooling1D(pool_size=2,strides=1,)(freq_reduced)
+        
+        dd = tf.keras.layers.Dense(2048)(freq_reduced)
+        ## Starting with the attention block
+        att = tf.keras.layers.Conv1D(2,1,strides=1,padding='valid',)(dd)
+        att_aten = tf.keras.layers.Lambda(lambda x: tf.keras.activations.softmax(tf.keras.activations.tanh(x)), output_shape=None)(att)
+        cla = tf.keras.layers.Conv1D(2,1,strides=1,padding='valid',)(dd)
+        cla_aten = tf.keras.layers.Lambda(lambda x: tf.keras.activations.sigmoid(x), output_shape=None)(cla)
+        
+        x = att_aten * cla_aten
+        x = tf.keras.layers.Lambda(lambda x:tf.math.reduce_sum(x, axis=1), output_shape=None, name='logits')(x)
+        
+        #model = tf.keras.models.Model(inputs=input, outputs=[x, att_aten, cla_aten])
+        model = tf.keras.models.Model(inputs=input, outputs=x)
+        #model = tf.keras.models.Model(inputs=input, outputs=logits)
         model.summary()
         opt = tf.keras.optimizers.Adam(learning_rate=config.LR_START)
 
@@ -36,7 +50,7 @@ def get_model(strategy):
             optimizer=opt,
             # loss=[tf.keras.losses.SparseCategoricalCrossentropy()],
             loss={
-                "logits": tf.keras.losses.BinaryCrossentropy(
+                "logits": tf.keras.losses.CategoricalCrossentropy(
                     from_logits=True, label_smoothing=0.1
                 ),
             },
