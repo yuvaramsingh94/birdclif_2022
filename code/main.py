@@ -1,214 +1,166 @@
-import re
-import os
-import numpy as np
+from pytorch_lightning import LightningModule, Trainer
 import pandas as pd
-import random
-import math
-import tensorflow as tf
-from tqdm.auto import tqdm
-import json
-from datetime import datetime
+import numpy as np
+from model import TimmSED
+from utils import PANNsLoss, birdclef_dataset, set_seed
 from config.config import config
-from utils import *
-from model import *
-import shutil
-from tensorflow.keras import backend as K
-import matplotlib.pyplot as plt
+import torch
+import torch.utils.data as data
+import torch.nn.functional as F
+import augmentations as ag
+set_seed(config.SEED)
 
-seed_everything(config.SEED)
 
-IS_COLAB = not os.path.exists("/kaggle/input")
-print(IS_COLAB)
+AVAIL_GPUS = max(0, torch.cuda.device_count())
 
-if IS_COLAB:
-    if not os.path.exists(
-        config.SAVE_DIR + config.WEIGHT_SAVE + f"/fold_{str(config.FOLD)}/"
+
+class LitBIRD_V1(LightningModule):
+    def __init__(
+        self,
+        train_df,
+        valid_df,
+        learning_rate=2e-4,
     ):
-        os.makedirs(config.SAVE_DIR + config.WEIGHT_SAVE + f"/fold_{str(config.FOLD)}/")
 
-    if not os.path.exists(
-        config.SAVE_DIR
-        + config.WEIGHT_SAVE
-        + f"/fold_{str(config.FOLD)}/"
-        + "/weights/"
-    ):
-        os.makedirs(
-            config.SAVE_DIR
-            + config.WEIGHT_SAVE
-            + f"/fold_{str(config.FOLD)}/"
-            + "/weights/"
+        super().__init__()
+
+        # Set our init args as class attributes
+        self.learning_rate = learning_rate
+        self.train_df = train_df
+        self.valid_df = valid_df
+
+        # Define PyTorch model
+        self.model = TimmSED(
+            base_model_name=config.MODEL_TYPE,
+            pretrained=True,
+            num_classes=config.N_CLASSES,
+            in_channels=1,
+        )
+        
+        print('this is device',self.device)
+        alpha = 0.3
+        #self.alpha = torch.Tensor([alpha, 1 - alpha])
+        #self.loss_fn = PANNsLoss(alpha)#.cuda()
+        
+
+    def forward(self, x):
+        x = x.float()
+        #print(x)
+        #print('X',x.shape)
+        x = self.model(x)
+        return x
+
+    def training_step(self, batch, batch_idx):
+        #print('batch',batch)
+        #x, y = batch['waveform'], batch['targets']
+        x, y = batch
+        logits = self(x)
+        #loss = self.loss_fn(logits, y)
+        loss = F.binary_cross_entropy_with_logits(logits['clipwise_output'], y)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
+        logits = self(x)
+        #loss = self.loss_fn(logits, y)
+        loss = F.binary_cross_entropy_with_logits(logits['clipwise_output'], y)
+
+        # Calling self.log will surface up scalars for you in TensorBoard
+        self.log("val_loss", loss, prog_bar=True)
+        # self.log("val_acc", self.accuracy, prog_bar=True)
+        return loss
+
+    # def test_step(self, batch, batch_idx):
+    #    # Here we just reuse the validation_step for testing
+    #    return self.validation_step(batch, batch_idx)
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        return optimizer
+
+    ####################
+    # DATA RELATED HOOKS
+    ####################
+
+    def train_dataloader(self):
+
+        transform = ag.Compose(
+            [
+                ag.OneOf(
+                    [
+                        ag.GaussianNoiseSNR(
+                            min_snr=10, max_snr=20.0, p=1.0
+                        ),  # this is the change
+                        ag.PinkNoiseSNR(min_snr=10, max_snr=20.0, p=1.0),  #
+                    ]
+                )
+            ]
         )
 
+        train_dataset = birdclef_dataset(
+            self.train_df[:50],
+            augmentation=transform,
+            path=config.DATA_PATH,
+            aug_per=config.AUG_PER,
+            is_validation=False,
+            secondary_effectiveness=config.SECONDAEY_EFF,
+        )
 
-print("copy the code and supporting materials for reference")
-if os.path.exists(
-    config.SAVE_DIR + config.WEIGHT_SAVE + f"/fold_{str(config.FOLD)}/" + "/code"
-):
-    shutil.rmtree(
-        config.SAVE_DIR + config.WEIGHT_SAVE + f"/fold_{str(config.FOLD)}/" + "/code"
-    )
-shutil.copytree(
-    "/content/code",
-    config.SAVE_DIR + config.WEIGHT_SAVE + f"/fold_{str(config.FOLD)}/" + "/code",
-)
+        train_dataloader = data.DataLoader(
+            train_dataset,
+            batch_size=config.BATCH_SIZE,
+            shuffle=True,
+            num_workers=config.WORKERS,
+            drop_last=True,
+            # pin_memory=True,
+        )
 
-"""
-print("copy the code and supporting materials for reference")
-if os.path.exists(config.SAVE_DIR + config.WEIGHT_SAVE + "/code"):
-    shutil.rmtree(config.SAVE_DIR + config.WEIGHT_SAVE + "/code")
-shutil.copytree("/content/code", config.SAVE_DIR + config.WEIGHT_SAVE + "/code")
-"""
+        return train_dataloader
 
-import tensorflow as tf
+    def val_dataloader(self):
+        valid_dataset = birdclef_dataset(
+            self.valid_df[:50],
+            augmentation=None,
+            path=config.DATA_PATH,
+            aug_per=0.0,
+            is_validation=True,
+            secondary_effectiveness=config.SECONDAEY_EFF,
+        )
 
-try:
-    # TPU detection. No parameters necessary if TPU_NAME environment variable is
-    # set: this is always the case on Kaggle.
-    tpu = tf.distribute.cluster_resolver.TPUClusterResolver()
-    print("Running on TPU ", tpu.master())
-except ValueError:
-    tpu = None
+        valid_dataloader = data.DataLoader(
+            valid_dataset,
+            batch_size=config.BATCH_SIZE,
+            shuffle=False,
+            num_workers=config.WORKERS,
+            drop_last=True,
+            # pin_memory=True,
+        )
 
-if tpu:
-    tf.config.experimental_connect_to_cluster(tpu)
-    tf.tpu.experimental.initialize_tpu_system(tpu)
-    strategy = tf.distribute.TPUStrategy(tpu)
-else:
-    # Default distribution strategy in Tensorflow. Works on CPU and single GPU.
-    strategy = tf.distribute.get_strategy()
+        return valid_dataloader
 
-AUTO = tf.data.experimental.AUTOTUNE
-print("REPLICAS: ", strategy.num_replicas_in_sync)
-config.BATCH_SIZE = config.BATCH_SIZE * strategy.num_replicas_in_sync
+    # def test_dataloader(self):
+    #    return DataLoader(self.mnist_test, batch_size=BATCH_SIZE)
 
 
-MODEL_NAME = None
-if config.model_type == "effnetv1":
-    MODEL_NAME = f"effnetv1_b{config.EFF_NET}"
-elif config.model_type == "effnetv2":
-    MODEL_NAME = f"effnetv2_{config.EFF_NETV2}"
+main_df = pd.read_csv(config.DATAFRAME_PATH)
+main_df["secondary_label_index"] = main_df["secondary_label_index"].apply(eval)
+for fold in range(config.FOLD):
+    train_df = main_df[main_df["fold"] != fold].reset_index(
+        drop=True
+    )  # actually its v2 with 5 fold
+    valid_df = main_df[main_df["fold"] == fold].reset_index(
+        drop=True
+    )  # better_df[better_df['fold'] == fold]
 
-config.MODEL_NAME = MODEL_NAME
-print(MODEL_NAME)
-
-print("Train image original ")
-row = 10
-col = 8
-row = min(row, config.BATCH_SIZE // col)
-
-"""
-GCS_PATH = (
-    config.DATA_LINK  # public one dietic crop
-)
-# GCS_PATH = 'gs://kds-8ab64f4f49e944c723b1ef14c537b9928a5a299d3bbc21e4d3cf32f5'
-train_files = np.sort(
-    np.array(tf.io.gfile.glob(GCS_PATH + "/happywhale-2022-train*.tfrec"))
-)
-test_files = np.sort(
-    np.array(tf.io.gfile.glob(GCS_PATH + "/happywhale-2022-test*.tfrec"))
-)
-
-"""
-if not config.IS_COLAB:
-    train_files = [
-        config.DATA_PATH + i for i in os.listdir(config.DATA_PATH) if "tfrec" in i
-    ]
-else:
-    train_ff_files = np.sort(
-        np.array(tf.io.gfile.glob(config.DATA_LINK + "/happywhale-ff*.tfrec"))
-    )
-    train_war_files = np.sort(
-        np.array(tf.io.gfile.glob(config.DATA_LINK + "/happywhale-war*.tfrec"))
+    lightning_model = LitBIRD_V1(
+        train_df,
+        valid_df,
+        learning_rate=config.LR_START,
     )
 
-
-# print(train_ff_files)
-# print(train_ff_files)
-# train_ff_files = [x for i, x in enumerate(train_ff_files) if i != config.FOLD]
-# train_war_files = [x for i, x in enumerate(train_war_files) if i != config.FOLD]
-
-TRAINING_FILENAMES = [x for i, x in enumerate(train_ff_files) if i != config.FOLD] + [
-    x for i, x in enumerate(train_war_files) if i != config.FOLD
-]
-
-# valid_ff_files = [x for i, x in enumerate(train_ff_files) if i == config.FOLD]
-# valid_war_files = [x for i, x in enumerate(train_war_files) if i == config.FOLD]
-# VALIDATION_FILENAMES = valid_ff_files + valid_war_files
-
-VALIDATION_FILENAMES = [x for i, x in enumerate(train_ff_files) if i == config.FOLD] + [
-    x for i, x in enumerate(train_war_files) if i == config.FOLD
-]
-"""
-#print("Fold ", fold)
-print(
-    len(TRAINING_FILENAMES),
-    len(VALIDATION_FILENAMES),
-    count_data_items(TRAINING_FILENAMES),
-    count_data_items(VALIDATION_FILENAMES),
-)
-"""
-print("Training file", TRAINING_FILENAMES)
-print("validation file", VALIDATION_FILENAMES)
-
-seed_everything(config.SEED)
-VERBOSE = 1
-train_dataset = get_training_dataset(TRAINING_FILENAMES)
-val_dataset = get_valid_dataset(VALIDATION_FILENAMES)
-STEPS_PER_EPOCH = count_data_items(TRAINING_FILENAMES) // config.BATCH_SIZE
-# VAL_STEPS_PER_EPOCH = count_data_items(VALIDATION_FILENAMES) // config.BATCH_SIZE
-train_logger = tf.keras.callbacks.CSVLogger(
-    config.SAVE_DIR
-    + config.WEIGHT_SAVE
-    + f"/fold_{str(config.FOLD)}/"
-    + "weights/"
-    + f"training-log.h5.csv"
-)
-# SAVE BEST MODEL EACH FOLD
-sv_loss = tf.keras.callbacks.ModelCheckpoint(
-    config.SAVE_DIR
-    + config.WEIGHT_SAVE
-    + f"/fold_{str(config.FOLD)}/"
-    + "weights/"
-    + "best.hdf5",  # {epoch:02d}
-    # "weights/v1/best.h5",
-    monitor="val_loss",
-    verbose=0,
-    save_best_only=True,
-    save_weights_only=True,
-    mode="min",
-    save_freq="epoch",
-)
-# BUILD MODEL
-K.clear_session()
-model = get_model(strategy)
-# model.summary()
-
-# print(
-#    "#### Image Size %i with EfficientNet B%i and batch_size %i"
-#    % (config.IMAGE_SIZE, config.EFF_NET, config.BATCH_SIZE)
-# )
-
-history = model.fit(
-    train_dataset,
-    validation_data=val_dataset,
-    steps_per_epoch=STEPS_PER_EPOCH,
-    # validation_steps=VAL_STEPS_PER_EPOCH,
-    epochs=config.EPOCHS,
-    # callbacks=[get_lr_callback(), train_logger, sv_loss, Snapshot([1, 20, 30, 40])],#maybe remove  train_logger, sv_loss
-    callbacks=[
-        get_lr_callback(),
-        sv_loss,
-    ],  # maybe remove  train_logger, sv_loss # Snapshot([1, 20, 30, 40])
-    verbose=VERBOSE,
-)
-
-print(history.history.keys())
-
-# summarize history for loss
-plt.plot(history.history["loss"])
-plt.plot(history.history["val_loss"])
-plt.title("model loss")
-plt.ylabel("loss")
-plt.xlabel("epoch")
-plt.legend(["train", "test"], loc="upper left")
-plt.show()
+    trainer = Trainer(
+        gpus=AVAIL_GPUS,
+        max_epochs=config.EPOCHS,
+        progress_bar_refresh_rate=20,
+    )
+    trainer.fit(lightning_model)

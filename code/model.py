@@ -1,64 +1,237 @@
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import (
-    Conv2D,
-    BatchNormalization,
-    ReLU,
-    GlobalAveragePooling2D,
-    Dense,
-    Softmax,
-)
-from kapre import STFT, Magnitude, MagnitudeToDecibel
-from kapre.composed import get_melspectrogram_layer, get_log_frequency_spectrogram_layer
-import tensorflow as tf
-import tfimm
+import os
+import torch
+from torch import nn
+from torch.nn import functional as F
+from torch.utils.data import DataLoader, random_split
+from torchlibrosa.stft import LogmelFilterBank, Spectrogram
+from torchlibrosa.augmentation import SpecAugmentation
+import timm
+from timm.models.layers import SelectAdaptivePool2d
+from torch.optim.optimizer import Optimizer
+import augmentations as ag
 from config.config import config
 
+# from torchmetrics import Accuracy
+# from torchvision import transforms
+# from torchvision.datasets import MNIST
 
-def get_model(strategy):
+## torchlibrosa
+## https://pypi.org/project/torchlibrosa/#files
+## https://www.kaggle.com/code/yuvaramsingh/pytorch-training-birdclef2021-starter
 
-    with strategy.scope():
+def init_layer(layer):
+    nn.init.xavier_uniform_(layer.weight)
 
-        base = tfimm.create_model(config.model_type, pretrained=True, nb_classes=0)
+    if hasattr(layer, "bias"):
+        if layer.bias is not None:
+            layer.bias.data.fill_(0.)
 
-        input = tf.keras.Input((config.IMG_FREQ, config.IMG_TIME, 3), name="inp1")
-        _, features = base(input, return_features=True)
-        ## SED model flow
-        # (batch_size, freq, frames, channels, )
+def interpolate(x: torch.Tensor, ratio: int):
+    """Interpolate data in time domain. This is used to compensate the
+    resolution reduction in downsampling of a CNN.
+    Args:
+      x: (batch_size, time_steps, classes_num)
+      ratio: int, ratio to interpolate
+    Returns:
+      upsampled: (batch_size, time_steps * ratio, classes_num)
+    """
+    (batch_size, time_steps, classes_num) = x.shape
+    upsampled = x[:, :, None, :].repeat(1, 1, ratio, 1)
+    upsampled = upsampled.reshape(batch_size, time_steps * ratio, classes_num)
+    return upsampled
+
+
+def pad_framewise_output(framewise_output: torch.Tensor, frames_num: int):
+    """Pad framewise_output to the same length as input frames. The pad value
+    is the same as the value of the last frame.
+    Args:
+      framewise_output: (batch_size, frames_num, classes_num)
+      frames_num: int, number of frames to pad
+    Outputs:
+      output: (batch_size, frames_num, classes_num)
+    """
+    output = F.interpolate(
+        framewise_output.unsqueeze(1),
+        size=(frames_num, framewise_output.size(2)),
+        align_corners=True,
+        mode="bilinear").squeeze(1)
+
+    return output
+
+def init_bn(bn):
+    bn.bias.data.fill_(0.)
+    bn.weight.data.fill_(1.0)
+
+
+def init_weights(model):
+    classname = model.__class__.__name__
+    if classname.find("Conv2d") != -1:
+        nn.init.xavier_uniform_(model.weight, gain=np.sqrt(2))
+        model.bias.data.fill_(0)
+    elif classname.find("BatchNorm") != -1:
+        model.weight.data.normal_(1.0, 0.02)
+        model.bias.data.fill_(0)
+    elif classname.find("GRU") != -1:
+        for weight in model.parameters():
+            if len(weight.size()) > 1:
+                nn.init.orghogonal_(weight.data)
+    elif classname.find("Linear") != -1:
+        model.weight.data.normal_(0, 0.01)
+        model.bias.data.zero_()
         
-        # (batch_size, frames, channels, )
-        freq_reduced = tf.keras.layers.Lambda(lambda x: tf.math.reduce_mean(x,axis=1), output_shape=None)(features["features"])
-        ## without pooling
-        #ap = tf.keras.layers.AveragePooling1D(pool_size=2,strides=1,)(freq_reduced)
-        
-        dd = tf.keras.layers.Dense(2048)(freq_reduced)
-        ## Starting with the attention block
-        att = tf.keras.layers.Conv1D(2,1,strides=1,padding='valid',)(dd)
-        att_aten = tf.keras.layers.Lambda(lambda x: tf.keras.activations.softmax(tf.keras.activations.tanh(x)), output_shape=None)(att)
-        cla = tf.keras.layers.Conv1D(2,1,strides=1,padding='valid',)(dd)
-        cla_aten = tf.keras.layers.Lambda(lambda x: tf.keras.activations.sigmoid(x), output_shape=None)(cla)
-        
-        x = att_aten * cla_aten
-        x = tf.keras.layers.Lambda(lambda x:tf.math.reduce_sum(x, axis=1), output_shape=None, name='logits')(x)
-        
-        #model = tf.keras.models.Model(inputs=input, outputs=[x, att_aten, cla_aten])
-        model = tf.keras.models.Model(inputs=input, outputs=x)
-        #model = tf.keras.models.Model(inputs=input, outputs=logits)
-        model.summary()
-        opt = tf.keras.optimizers.Adam(learning_rate=config.LR_START)
+class AttBlockV2(nn.Module):
+    def __init__(self, in_features: int, out_features: int, activation="linear"):
+        super().__init__()
 
-        model.compile(
-            optimizer=opt,
-            # loss=[tf.keras.losses.SparseCategoricalCrossentropy()],
-            loss={
-                "logits": tf.keras.losses.CategoricalCrossentropy(
-                    from_logits=True, label_smoothing=0.1
-                ),
-            },
-            # metrics=[
-            #    # tf.keras.metrics.SparseCategoricalAccuracy(),
-            #    # tf.keras.metrics.SparseTopKCategoricalAccuracy(k=5),
-            #    tf.keras.metrics.CategoricalAccuracy(),
-            #    tf.keras.metrics.TopKCategoricalAccuracy(k=5),
-            # ],
+        self.activation = activation
+        self.att = nn.Conv1d(
+            in_channels=in_features,
+            out_channels=out_features,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+            bias=True,
         )
-        return model
+        self.cla = nn.Conv1d(
+            in_channels=in_features,
+            out_channels=out_features,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+            bias=True,
+        )
+
+        self.init_weights()
+
+    def init_weights(self):
+        init_layer(self.att)
+        init_layer(self.cla)
+
+    def forward(self, x):
+        # x: (n_samples, n_in, n_time)
+        norm_att = torch.softmax(torch.tanh(self.att(x)), dim=-1)
+        cla = self.nonlinear_transform(self.cla(x))
+        x = torch.sum(norm_att * cla, dim=2)
+        return x, norm_att, cla
+
+    def nonlinear_transform(self, x):
+        if self.activation == "linear":
+            return x
+        elif self.activation == "sigmoid":
+            return torch.sigmoid(x)
+
+
+class TimmSED(nn.Module):
+    def __init__(
+        self, base_model_name: str, pretrained=False, num_classes=24, in_channels=1
+    ):
+        super().__init__()
+        # Spectrogram extractor
+        self.spectrogram_extractor = Spectrogram(
+            n_fft=config.n_fft,
+            hop_length=config.hop_length,
+            win_length=config.n_fft,
+            window="hann",
+            center=True,
+            pad_mode="reflect",
+            freeze_parameters=True,
+        )
+
+        # Logmel feature extractor
+        self.logmel_extractor = LogmelFilterBank(
+            sr=config.sample_rate,
+            n_fft=config.n_fft,
+            n_mels=config.n_mels,
+            fmin=config.fmin,
+            fmax=config.fmax,
+            ref=1.0,
+            amin=1e-10,
+            top_db=None,
+            freeze_parameters=True,
+        )
+
+        # Spec augmenter
+        self.spec_augmenter = SpecAugmentation(
+            time_drop_width=64,
+            time_stripes_num=2,
+            freq_drop_width=8,
+            freq_stripes_num=2,
+        )
+
+        self.bn0 = nn.BatchNorm2d(config.n_mels)
+
+        ## check : check the shape of the tensor to see what is going on
+
+        base_model = timm.create_model(
+            base_model_name, pretrained=pretrained, in_chans=in_channels
+        )
+        layers = list(base_model.children())[:-2]
+        self.encoder = nn.Sequential(*layers)
+
+        if hasattr(base_model, "fc"):
+            in_features = base_model.fc.in_features
+        else:
+            in_features = base_model.classifier.in_features
+        self.fc1 = nn.Linear(in_features, in_features, bias=True)
+        self.att_block = AttBlockV2(in_features, num_classes, activation="sigmoid")
+
+        self.init_weight()
+
+    def init_weight(self):
+        init_layer(self.fc1)
+        init_bn(self.bn0)
+
+    def forward(self, input):
+        # (batch_size, 1, time_steps, freq_bins)
+        x = self.spectrogram_extractor(input)
+        x = self.logmel_extractor(x)  # (batch_size, 1, time_steps, mel_bins)
+
+        frames_num = x.shape[2]
+
+        x = x.transpose(1, 3)
+        x = self.bn0(x)
+        x = x.transpose(1, 3)
+
+        if self.training:
+            x = self.spec_augmenter(x)
+
+        x = x.transpose(2, 3)
+        # (batch_size, channels, freq, frames)
+        x = self.encoder(x)
+
+        # (batch_size, channels, frames)
+        x = torch.mean(x, dim=2)
+
+        # channel smoothing
+        x1 = F.max_pool1d(x, kernel_size=3, stride=1, padding=1)
+        x2 = F.avg_pool1d(x, kernel_size=3, stride=1, padding=1)
+        x = x1 + x2
+
+        x = F.dropout(x, p=0.5, training=self.training)
+        x = x.transpose(1, 2)
+        x = F.relu_(self.fc1(x))
+        x = x.transpose(1, 2)
+        x = F.dropout(x, p=0.5, training=self.training)
+        (clipwise_output, norm_att, segmentwise_output) = self.att_block(x)
+        logit = torch.sum(norm_att * self.att_block.cla(x), dim=2)
+        segmentwise_logit = self.att_block.cla(x).transpose(1, 2)
+        segmentwise_output = segmentwise_output.transpose(1, 2)
+
+        interpolate_ratio = frames_num // segmentwise_output.size(1)
+
+        # Get framewise output
+        framewise_output = interpolate(segmentwise_output, interpolate_ratio)
+        framewise_output = pad_framewise_output(framewise_output, frames_num)
+
+        framewise_logit = interpolate(segmentwise_logit, interpolate_ratio)
+        framewise_logit = pad_framewise_output(framewise_logit, frames_num)
+
+        output_dict = {
+            "framewise_output": framewise_output,
+            "segmentwise_output": segmentwise_output,
+            "logit": logit,
+            "framewise_logit": framewise_logit,
+            "clipwise_output": clipwise_output,
+        }
+
+        return output_dict

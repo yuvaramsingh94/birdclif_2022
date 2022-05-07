@@ -1,5 +1,7 @@
 torch
 torchaudio
+pytorch-lightning
+torchmetrics
 colorednoise
 timm
 tfimm
@@ -9,3 +11,4 @@ matplotlib
 librosa
 opencv-python
 seaborn
+torchlibrosa==0.0.9
