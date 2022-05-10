@@ -12,7 +12,7 @@ from kapre.composed import get_melspectrogram_layer, get_log_frequency_spectrogr
 import tensorflow as tf
 import tfimm
 from config.config import config
-
+import tensorflow_addons as tfa
 
 def get_model(strategy):
 
@@ -32,9 +32,10 @@ def get_model(strategy):
         
         dd = tf.keras.layers.Dense(2048)(freq_reduced)
         ## Starting with the attention block
-        att = tf.keras.layers.Conv1D(2,1,strides=1,padding='valid',)(dd)
+        # 2
+        att = tf.keras.layers.Conv1D(config.N_CLASSES,1,strides=1,padding='valid',)(dd)
         att_aten = tf.keras.layers.Lambda(lambda x: tf.keras.activations.softmax(tf.keras.activations.tanh(x)), output_shape=None)(att)
-        cla = tf.keras.layers.Conv1D(2,1,strides=1,padding='valid',)(dd)
+        cla = tf.keras.layers.Conv1D(config.N_CLASSES,1,strides=1,padding='valid',)(dd)
         cla_aten = tf.keras.layers.Lambda(lambda x: tf.keras.activations.sigmoid(x), output_shape=None)(cla)
         
         x = att_aten * cla_aten
@@ -50,8 +51,8 @@ def get_model(strategy):
             optimizer=opt,
             # loss=[tf.keras.losses.SparseCategoricalCrossentropy()],
             loss={
-                "logits": tf.keras.losses.CategoricalCrossentropy(
-                    from_logits=True, label_smoothing=0.1
+                "logits": tfa.losses.SigmoidFocalCrossEntropy(
+                    from_logits=True, alpha = 0.25, gamma = 2.,
                 ),
             },
             # metrics=[

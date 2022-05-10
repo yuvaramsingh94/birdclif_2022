@@ -103,12 +103,12 @@ def read_labeled_tfrecord(example):
     LABELED_TFREC_FORMAT = {
         "image": tf.io.FixedLenFeature([], tf.string), # tf.string means bytestring
         "image_name": tf.io.FixedLenFeature([], tf.string),  # shape [] means single element
-        'target': tf.io.FixedLenFeature([], tf.int64),
+        'label': tf.io.FixedLenSequenceFeature([], tf.float32, allow_missing = True),
     }
     example = tf.io.parse_single_example(example, LABELED_TFREC_FORMAT)
     image = decode_image(example["image"])
-    label = example["target"]
-    label = tf.one_hot(tf.cast(label, tf.int32), depth = config.N_CLASSES)
+    label = example["label"]
+    #label = tf.one_hot(tf.cast(label, tf.int32), depth = config.N_CLASSES)
     # image name
     image_name = example["image_name"]
     return image, label, image_name  # returns a dataset of (image, label) pairs
