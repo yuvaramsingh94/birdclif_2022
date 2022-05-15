@@ -20,11 +20,6 @@ seed_everything(config.SEED)
 IS_COLAB = not os.path.exists("/kaggle/input")
 print(IS_COLAB)
 
-
-
-
-
-
 """
 print("copy the code and supporting materials for reference")
 if os.path.exists(config.SAVE_DIR + config.WEIGHT_SAVE + "/code"):
