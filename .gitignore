@@ -131,4 +131,4 @@ data/*
 weights/*
 prediction/*
 model_saved/*
-
+notebook_inference/weights/*
